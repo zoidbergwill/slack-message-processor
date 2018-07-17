@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -55,6 +56,11 @@ type Attachment struct {
 	ID          int64  `json:"id"`
 }
 
+type kv struct {
+	URL   string
+	Value int
+}
+
 func check(e error) {
 	if e != nil {
 		panic(e)
@@ -65,7 +71,7 @@ func processDir(dir string) {
 }
 
 func simplifyURL(url string) string {
-	return strings.TrimLeft(strings.TrimLeft(url, "https://"), "http://")
+	return strings.Replace(strings.Replace(url, "https://", "", -1), "http://", "", -1)
 }
 func processFile(filename string, counterChan chan string) {
 	urlFinder := xurls.Strict()
@@ -76,8 +82,10 @@ func processFile(filename string, counterChan chan string) {
 	for _, msg := range messages {
 		urls := urlFinder.FindAllString(string(msg.Text), -1)
 		if len(urls) > 0 {
-			fmt.Printf("%+v\n", urls)
+			// fmt.Printf("%+v\n", urls)
 			for _, url := range urls {
+				splitURL := strings.Split(url, "|")
+				url = splitURL[0]
 				counterChan <- url
 			}
 		}
@@ -119,7 +127,7 @@ func main() {
 				fmt.Printf("skipping a dir without errors: %+v \n", info.Name())
 				return filepath.SkipDir
 			}
-			fmt.Printf("visited file: %q\n", path)
+			// fmt.Printf("visited file: %q\n", path)
 			if !info.IsDir() && strings.HasSuffix(path, ".json") {
 				fileWG.Add(1)
 				go func() {
@@ -138,7 +146,17 @@ func main() {
 	fileWG.Wait()
 	close(counterChan)
 	counterWG.Wait()
-	for url, count := range counter {
-		fmt.Printf("%s: %d\n", url, count)
+
+	var ss []kv
+	for k, v := range counter {
+		ss = append(ss, kv{k, v})
+	}
+
+	sort.Slice(ss, func(i, j int) bool {
+		return ss[i].Value > ss[j].Value
+	})
+
+	for _, kv := range ss {
+		fmt.Printf("%s: %d\n", kv.URL, kv.Value)
 	}
 }
